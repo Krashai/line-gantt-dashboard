@@ -51,6 +51,7 @@ model ProductionPlan {
   @@map("production_plans")
 }
 
+// TimescaleDB Hypertable
 model MachineStatusHistory {
   id      String   @default(cuid())
   time    DateTime @default(now()) @db.Timestamptz
@@ -59,18 +60,19 @@ model MachineStatusHistory {
   status  Boolean
   speed   Float
 
-  @@id([id, time]) // Klucz kompozytowy wymagany przez TimescaleDB
+  @@id([id, time]) // Klucz kompozytowy dla TimescaleDB
   @@index([time])
   @@map("machine_status_history")
 }
 
+// TimescaleDB Hypertable
 model ScrapEvent {
   id     String   @default(cuid())
   time   DateTime @default(now()) @db.Timestamptz
   lineId String
   line   Line     @relation(fields: [lineId], references: [id])
 
-  @@id([id, time]) // Klucz kompozytowy wymagany przez TimescaleDB
+  @@id([id, time]) // Klucz kompozytowy dla TimescaleDB
   @@index([time])
   @@map("scrap_events")
 }
