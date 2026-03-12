@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { format, differenceInMinutes, isWithinInterval, addMinutes, eachHourOfInterval, min, max } from 'date-fns';
-import { pl } from 'date-fns/locale'; // Import polskiej lokalizacji
+import { pl } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { addDowntimeComment, updateDowntimeComment } from '@/app/actions';
 import { X, Send, AlertCircle, MousePointer2, MessageSquareText, PencilLine, Plus, Timer, Gauge, Ban, History, Activity } from 'lucide-react';
@@ -27,7 +27,6 @@ export function LineDiagnostics({ lineId, initialPlans, initialHistory, initialC
   const dragStartPos = useRef<{ x: number; y: number; date: Date; type: string; comments: any[] } | null>(null);
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectionRange, setSelectionRange] = useState<{ start: Date; end: Date } | null>(null);
-  
   const [modalData, setModalData] = useState<{ start: Date; end: Date; existingId?: string; } | null>(null);
   const [actionChoice, setActionChoice] = useState<{ start: Date; end: Date; comments: any[] } | null>(null);
   const [commentText, setCommentText] = useState('');
@@ -39,6 +38,7 @@ export function LineDiagnostics({ lineId, initialPlans, initialHistory, initialC
     return () => clearInterval(interval);
   }, []);
 
+  // --- LOGIKA KPI ---
   const kpi = useMemo(() => {
     let totalPlannedMinutes = 0;
     let actualWorkMinutes = 0;
@@ -67,6 +67,7 @@ export function LineDiagnostics({ lineId, initialPlans, initialHistory, initialC
     };
   }, [initialPlans, initialHistory, from, now]);
 
+  // --- LOGIKA OSI CZASU ---
   const getPosition = (date: Date) => {
     const diff = differenceInMinutes(new Date(date), from);
     return Math.max(0, Math.min(100, (diff / totalMinutes) * 100));
@@ -77,9 +78,10 @@ export function LineDiagnostics({ lineId, initialPlans, initialHistory, initialC
     return allHours.filter((_, i) => i % 2 === 0);
   }, [from, to]);
 
-  const planSegments = useMemo(() => {
-    return initialPlans.map(plan => {
-      const segments: { start: Date; end: Date; type: 'running' | 'downtime' }[] = [];
+  // ALGORYTM UKŁADANIA W TORACH (LANES)
+  const planLanes = useMemo(() => {
+    const segments = initialPlans.map(plan => {
+      const segs: { start: Date; end: Date; type: 'running' | 'downtime' }[] = [];
       const planStart = new Date(Math.max(new Date(plan.startTime).getTime(), from.getTime()));
       const planEnd = new Date(Math.min(new Date(plan.endTime).getTime(), to.getTime()));
       if (planStart >= planEnd) return { ...plan, segments: [] };
@@ -88,13 +90,33 @@ export function LineDiagnostics({ lineId, initialPlans, initialHistory, initialC
         const next = addMinutes(current, 15);
         const segmentEnd = next > planEnd ? planEnd : next;
         const hasRunning = initialHistory.some(h => isWithinInterval(new Date(h.time), { start: current, end: segmentEnd }) && h.status === true);
-        segments.push({ start: new Date(current), end: new Date(segmentEnd), type: hasRunning ? 'running' : 'downtime' });
+        segs.push({ start: new Date(current), end: new Date(segmentEnd), type: hasRunning ? 'running' : 'downtime' });
         current = next;
       }
-      return { ...plan, segments };
+      return { ...plan, segments: segs };
+    }).filter(p => p.segments.length > 0);
+
+    // Sortowanie po czasie startu
+    segments.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+
+    const lanes: any[][] = [];
+    segments.forEach(plan => {
+      let added = false;
+      for (const lane of lanes) {
+        const lastInLane = lane[lane.length - 1];
+        // Jeśli ten plan zaczyna się po zakończeniu ostatniego w tym torze (z marginesem 1 min)
+        if (new Date(plan.startTime) >= new Date(lastInLane.endTime)) {
+          lane.push(plan);
+          added = true;
+          break;
+        }
+      }
+      if (!added) lanes.push([plan]);
     });
+    return lanes;
   }, [initialPlans, initialHistory, from, to]);
 
+  // --- OBSŁUGA INTERAKCJI ---
   const handleEditClick = (comment: any) => {
     setModalData({ start: new Date(comment.startTime), end: new Date(comment.endTime), existingId: comment.id });
     setCommentText(comment.comment);
@@ -156,17 +178,15 @@ export function LineDiagnostics({ lineId, initialPlans, initialHistory, initialC
         <div className="px-10 py-4 border-b border-slate-50 bg-slate-50/20 flex items-center justify-between rounded-t-[2.5rem]">
           <div className="flex items-center gap-3 text-blue-500">
             <Activity size={14} />
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em]">Oś Czasu (Live)</span>
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em]">Praca Maszyny</span>
           </div>
         </div>
         
-        <div className="relative w-full bg-white pt-24 pb-10 px-10 overflow-x-visible min-h-[300px] select-none">
+        <div className="relative w-full bg-white pt-24 pb-10 px-10 overflow-x-visible min-h-[200px] select-none">
           <div className="relative h-1.5 w-full bg-slate-50 mb-12 z-0 rounded-full border border-slate-100">
             {hours.map((hour, i) => (
               <div key={i} className="absolute border-l-2 border-slate-200 h-4 top-[-2px]" style={{ left: `${getPosition(hour)}%` }}>
-                <span className="absolute top-[-36px] left-1/2 -translate-x-1/2 text-[10px] font-black text-slate-400 whitespace-nowrap bg-white px-1.5 py-0.5 rounded border border-slate-100">
-                  {format(hour, 'HH:mm', { locale: pl })}
-                </span>
+                <span className="absolute top-[-36px] left-1/2 -translate-x-1/2 text-[10px] font-black text-slate-400 whitespace-nowrap bg-white px-1.5 py-0.5 rounded border border-slate-100">{format(hour, 'HH:mm', { locale: pl })}</span>
               </div>
             ))}
             {isWithinInterval(now, { start: from, end: to }) && (
@@ -177,64 +197,69 @@ export function LineDiagnostics({ lineId, initialPlans, initialHistory, initialC
           </div>
 
           <div className="relative space-y-12 z-10">
-            {planSegments.map((plan, pIdx) => {
-              const planStartPos = getPosition(new Date(plan.startTime));
-              const planWidth = getPosition(new Date(plan.endTime)) - planStartPos;
-              const isOdd = pIdx % 2 === 0;
-              const labelTop = isOdd ? "-top-8" : "-top-16";
-              const connectorHeight = isOdd ? "h-8" : "h-16";
+            {planLanes.map((lane, lIdx) => (
+              <div key={lIdx} className="relative h-16 w-full">
+                {lane.map((plan, pIdx) => {
+                  const planStartPos = getPosition(new Date(plan.startTime));
+                  const planWidth = getPosition(new Date(plan.endTime)) - planStartPos;
+                  
+                  // Etykiety są naprzemienne dla torów, aby uniknąć kolizji pionowej
+                  const labelTop = lIdx % 2 === 0 ? "-top-8" : "-top-12";
+                  const connectorHeight = lIdx % 2 === 0 ? "h-8" : "h-12";
 
-              return (
-                <div key={plan.id} className="relative h-16 w-full">
-                  <div className="absolute h-full" style={{ left: `${planStartPos}%`, width: `${planWidth}%` }}>
-                    <div className={cn("absolute left-0 flex flex-col items-start pointer-events-none z-20", labelTop)}>
-                      <div className="flex items-center gap-2 bg-slate-900 text-white px-2 py-1 rounded-md shadow-lg border border-slate-800"><span className="text-[10px] font-black uppercase tracking-widest">{plan.productIndex}</span><span className="text-[8px] text-slate-400 font-mono border-l border-slate-700 pl-2">{plan.plannedSpeed}</span></div>
-                      <div className={cn("w-px bg-slate-200 ml-4", connectorHeight)}></div>
-                    </div>
-                    <div className="absolute inset-0 flex bg-slate-50/50 rounded-xl border border-slate-100 shadow-[inset_0_2px_10px_rgb(0,0,0,0.02)] overflow-visible z-10" onMouseUp={onMouseUp}>
-                      {plan.segments.map((seg, idx) => {
-                        const width = ((getPosition(seg.end) - getPosition(seg.start)) / planWidth) * 100;
-                        const matchingComments = initialComments.filter(c => {
-                          const cStart = new Date(c.startTime);
-                          const cEnd = new Date(c.endTime);
-                          return (cStart <= seg.start && cEnd >= seg.end) || (isWithinInterval(cStart, { start: seg.start, end: seg.end }));
-                        });
-                        const isBeingSelected = selectionRange && isWithinInterval(seg.start, { start: selectionRange.start, end: selectionRange.end });
-                        const shouldShowDot = matchingComments.some(c => {
-                          const midTime = new Date((new Date(c.startTime).getTime() + new Date(c.endTime).getTime()) / 2);
-                          return isWithinInterval(midTime, { start: seg.start, end: seg.end });
-                        });
+                  return (
+                    <div key={plan.id} className="absolute h-full group" style={{ left: `${planStartPos}%`, width: `${planWidth}%` }}>
+                      <div className={cn("absolute left-0 flex flex-col items-start pointer-events-none z-20", labelTop)}>
+                        <div className="flex items-center gap-2 bg-slate-900 text-white px-2 py-1 rounded-md shadow-lg border border-slate-800"><span className="text-[10px] font-black uppercase tracking-widest">{plan.productIndex}</span><span className="text-[8px] text-slate-400 font-mono border-l border-slate-700 pl-2">{plan.plannedSpeed}</span></div>
+                        <div className={cn("w-px bg-slate-200 ml-4", connectorHeight)}></div>
+                      </div>
+                      <div className="absolute inset-0 flex bg-slate-50/50 rounded-xl border border-slate-100 shadow-[inset_0_2px_10px_rgb(0,0,0,0.02)] overflow-visible z-10" onMouseUp={onMouseUp}>
+                        {plan.segments.map((seg: any, idx: number) => {
+                          const width = ((getPosition(seg.start) - getPosition(seg.start)) / planWidth) * 100; // placeholder, actually we need the segment width
+                          const segWidth = ((getPosition(seg.end) - getPosition(seg.start)) / planWidth) * 100;
+                          
+                          const matchingComments = initialComments.filter(c => {
+                            const cStart = new Date(c.startTime);
+                            const cEnd = new Date(c.endTime);
+                            return (cStart <= seg.start && cEnd >= seg.end) || (isWithinInterval(cStart, { start: seg.start, end: seg.end }));
+                          });
+                          const isBeingSelected = selectionRange && isWithinInterval(seg.start, { start: selectionRange.start, end: selectionRange.end });
+                          const shouldShowDot = matchingComments.some(c => {
+                            const midTime = new Date((new Date(c.startTime).getTime() + new Date(c.endTime).getTime()) / 2);
+                            return isWithinInterval(midTime, { start: seg.start, end: seg.end });
+                          });
 
-                        return (
-                          <div key={idx}
-                            onMouseDown={(e) => onMouseDown(e, seg.start, seg.type, matchingComments)}
-                            onMouseEnter={() => onMouseMove({ clientX: 0, clientY: 0 } as any, seg.start)}
-                            className={cn(
-                              "h-full border-r border-white/5 last:border-0 relative transition-all group/seg",
-                              seg.type === 'running' ? "bg-emerald-500" : "bg-rose-500 cursor-crosshair hover:brightness-110 shadow-inner",
-                              isBeingSelected && "ring-4 ring-blue-400 ring-inset z-[60] brightness-125",
-                              shouldShowDot && "after:absolute after:top-1/2 after:left-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:w-2.5 after:h-2.5 after:bg-white after:rounded-full after:shadow-lg after:border-2 after:border-rose-500"
-                            )}
-                            style={{ width: `${width}%` }}
-                            onMouseMove={(e) => onMouseMove(e, seg.start)}
-                          >
-                            {matchingComments.length > 0 && !isSelecting && (
-                              <div className="absolute opacity-0 group-hover/seg:opacity-100 transition-opacity bottom-full left-0 z-[100] pb-4 pointer-events-none min-w-[280px]">
-                                <div className="bg-slate-900 text-white p-5 rounded-2xl shadow-2xl border border-slate-800 space-y-3 text-left">
-                                  <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-1"><div className="flex items-center gap-2"><MessageSquareText size={16} className="text-blue-400" /><span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Analiza Przestoju</span></div><PencilLine size={14} className="text-slate-500" /></div>
-                                  {matchingComments.map((c, i) => <div key={i} className="space-y-1 border-b border-white/5 last:border-0 pb-2 last:pb-0 text-left"><p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{format(new Date(c.startTime), 'HH:mm', { locale: pl })} - {format(new Date(c.endTime), 'HH:mm', { locale: pl })}</p><p className="text-sm font-semibold italic text-slate-100">"{c.comment}"</p></div>)}
+                          return (
+                            <div key={idx}
+                              onMouseDown={(e) => onMouseDown(e, seg.start, seg.type, matchingComments)}
+                              onMouseEnter={() => onMouseMove({ clientX: 0, clientY: 0 } as any, seg.start)}
+                              className={cn(
+                                "h-full border-r border-white/5 last:border-0 relative transition-all group/seg",
+                                seg.type === 'running' ? "bg-emerald-500" : "bg-rose-500 cursor-crosshair hover:brightness-110 shadow-inner",
+                                isBeingSelected && "ring-4 ring-blue-400 ring-inset z-[60] brightness-125",
+                                shouldShowDot && "after:absolute after:top-1/2 after:left-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:w-2.5 after:h-2.5 after:bg-white after:rounded-full after:shadow-lg after:border-2 after:border-rose-500"
+                              )}
+                              style={{ width: `${segWidth}%` }}
+                              onMouseMove={(e) => onMouseMove(e, seg.start)}
+                            >
+                              {matchingComments.length > 0 && !isSelecting && (
+                                <div className="absolute opacity-0 group-hover/seg:opacity-100 transition-opacity bottom-full left-0 z-[100] pb-4 pointer-events-none min-w-[280px]">
+                                  <div className="bg-slate-900 text-white p-5 rounded-2xl shadow-2xl border border-slate-800 space-y-3 text-left">
+                                    <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-1"><div className="flex items-center gap-2"><MessageSquareText size={16} className="text-blue-400" /><span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Analiza Przestoju</span></div><PencilLine size={14} className="text-slate-500" /></div>
+                                    {matchingComments.map((c, i) => <div key={i} className="space-y-1 border-b border-white/5 last:border-0 pb-2 last:pb-0 text-left"><p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{format(new Date(c.startTime), 'HH:mm', { locale: pl })} - {format(new Date(c.endTime), 'HH:mm', { locale: pl })}</p><p className="text-sm font-semibold italic text-slate-100">"{c.comment}"</p></div>)}
+                                  </div>
+                                  <div className="w-4 h-4 bg-slate-900 rotate-45 absolute bottom-2 left-6"></div>
                                 </div>
-                                <div className="w-4 h-4 bg-slate-900 rotate-45 absolute bottom-2 left-6"></div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                </div>
-              );
-            })}
+                  );
+                })}
+              </div>
+            ))}
           </div>
         </div>
       </section>
@@ -259,8 +284,8 @@ export function LineDiagnostics({ lineId, initialPlans, initialHistory, initialC
               ) : (
                 [...initialComments].reverse().map((c) => (
                   <div key={c.id} onClick={() => handleEditClick(c)} className="relative pl-8 py-1 group border-l-2 border-slate-100 hover:border-blue-500 transition-colors cursor-pointer text-left">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-3">
+                    <div className="flex items-center justify-between mb-3 text-left">
+                      <div className="flex items-center gap-3 text-left">
                         <span className="text-[14px] font-black text-slate-900 font-mono tracking-tight">{format(new Date(c.startTime), 'HH:mm', { locale: pl })}</span>
                         <span className="text-slate-300">—</span>
                         <span className="text-[14px] font-black text-slate-900 font-mono tracking-tight">{format(new Date(c.endTime), 'HH:mm', { locale: pl })}</span>
@@ -310,7 +335,7 @@ export function LineDiagnostics({ lineId, initialPlans, initialHistory, initialC
               </div>
               <button onClick={() => setModalData(null)} className="text-slate-400 hover:text-slate-900 rounded-full"><X size={20} /></button>
             </div>
-            <div className="p-8 space-y-6"><textarea autoFocus placeholder="Wpisz przyczynę..." className="w-full h-40 bg-white border-2 border-slate-100 rounded-[1.5rem] p-6 text-base text-slate-900 focus:border-blue-500 outline-none transition-all resize-none font-medium text-left" value={commentText} onChange={(e) => setCommentText(e.target.value)} /><button disabled={isSaving || !commentText.trim()} onClick={handleSaveComment} className="w-full bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white font-black text-xs uppercase tracking-[0.2em] py-5 rounded-2xl flex items-center justify-center gap-3 transition-all active:scale-95 shadow-xl shadow-slate-900/20">{isSaving ? 'Zapisywanie...' : <><Send size={16} /> {modalData.existingId ? 'Zaktualizuj wpis' : 'Zatwierdź opis'}</>}</button></div>
+            <div className="p-8 space-y-6 text-left"><textarea autoFocus placeholder="Wpisz przyczynę..." className="w-full h-40 bg-white border-2 border-slate-100 rounded-[1.5rem] p-6 text-base text-slate-900 focus:border-blue-500 outline-none transition-all resize-none font-medium text-left" value={commentText} onChange={(e) => setCommentText(e.target.value)} /><button disabled={isSaving || !commentText.trim()} onClick={handleSaveComment} className="w-full bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white font-black text-xs uppercase tracking-[0.2em] py-5 rounded-2xl flex items-center justify-center gap-3 transition-all active:scale-95 shadow-xl shadow-slate-900/20">{isSaving ? 'Zapisywanie...' : <><Send size={16} /> {modalData.existingId ? 'Zaktualizuj wpis' : 'Zatwierdź opis'}</>}</button></div>
           </div>
         </div>
       )}
