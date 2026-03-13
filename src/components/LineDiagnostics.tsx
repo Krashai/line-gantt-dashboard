@@ -54,15 +54,23 @@ export function LineDiagnostics({ lineId, initialPlans, initialHistory, initialC
         totalPlannedMinutes += differenceInMinutes(rangeEnd, rangeStart);
         const historyInPlan = initialHistory.filter(h => isWithinInterval(new Date(h.time), { start: rangeStart, end: rangeEnd }));
         historyInPlan.forEach(h => {
-          if (h.status) actualWorkMinutes += 10;
-          if (h.status && h.speed > 0) { speedSum += (h.speed / plan.plannedSpeed); speedCount++; }
+          if (h.status) actualWorkMinutes += 5; // Dopasowane do interwału 5 min w workerze/seedzie
+          if (h.status && h.speed > 0) { 
+            // Wydajność to stosunek prędkości rzeczywistej do zaplanowanej
+            const ratio = h.speed / plan.plannedSpeed;
+            speedSum += Math.min(ratio, 1); // Cap ratio at 1.0 (100%) per measurement
+            speedCount++; 
+          }
         });
       }
     });
 
+    const availability = totalPlannedMinutes > 0 ? (actualWorkMinutes / totalPlannedMinutes) * 100 : 0;
+    const performance = speedCount > 0 ? (speedSum / speedCount) * 100 : 0;
+
     return {
-      availability: totalPlannedMinutes > 0 ? (actualWorkMinutes / totalPlannedMinutes) * 100 : 0,
-      performance: speedCount > 0 ? (speedSum / speedCount) * 100 : 0,
+      availability: Math.min(availability, 100),
+      performance: Math.min(performance, 100),
       downtime: Math.max(0, totalPlannedMinutes - actualWorkMinutes)
     };
   }, [initialPlans, initialHistory, from, now]);

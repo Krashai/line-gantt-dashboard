@@ -49,7 +49,7 @@ export function LineCard({ line }: LineCardProps) {
                 {line.name}
               </h3>
             </div>
-            <StatusBadge status={currentStatus} className="px-3 py-1 text-[10px]" />
+            <StatusBadge status={currentStatus} />
           </div>
 
           {/* Metryki */}
