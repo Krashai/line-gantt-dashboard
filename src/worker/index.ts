@@ -4,8 +4,8 @@ import { prisma } from '../lib/prisma';
 const MQTT_URL = process.env.MQTT_BROKER_URL || 'mqtt://localhost:1883';
 const client = mqtt.connect(MQTT_URL);
 
-// Cache dla aktualnego stanu linii (żeby wiedzieć czy zliczać SCRAP)
-const lineStateCache: Record<string, { status: boolean; lineId: string }> = {};
+// Cache dla aktualnego stanu linii
+const lineStateCache: Record<string, { status: boolean; speed: number; lineId: string }> = {};
 
 client.on('connect', () => {
   console.log('✅ Worker connected to MQTT Broker');
@@ -32,10 +32,8 @@ client.on('message', async (topic, message) => {
         console.warn(`⚠️ Received data for unknown PLC ID: ${plcId}`);
         return;
       }
-      lineStateCache[plcId] = { status: false, lineId: line.id };
+      lineStateCache[plcId] = { status: false, speed: 0, lineId: line.id };
     }
-
-    const { lineId } = lineStateCache[plcId];
 
     // 2. Obsługa tagów
     if (tagName === 'Status') {
@@ -44,19 +42,21 @@ client.on('message', async (topic, message) => {
 
       await prisma.machineStatusHistory.create({
         data: {
-          lineId,
-          status,
-          speed: 0, // Prędkość zaktualizujemy innym tagiem lub zachowamy ostatnią
+          lineId: lineStateCache[plcId].lineId,
+          status: status,
+          speed: lineStateCache[plcId].speed, // Używamy ostatniej znanej prędkości
         }
       });
     } 
     else if (tagName === 'Speed') {
       const speed = parseFloat(value) || 0;
+      lineStateCache[plcId].speed = speed;
+
       await prisma.machineStatusHistory.create({
         data: {
-          lineId,
-          status: lineStateCache[plcId].status,
-          speed
+          lineId: lineStateCache[plcId].lineId,
+          status: lineStateCache[plcId].status, // Używamy ostatniego znanego statusu
+          speed: speed
         }
       });
     }

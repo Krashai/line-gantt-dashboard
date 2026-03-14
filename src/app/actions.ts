@@ -14,7 +14,10 @@ export async function getHallsWithLines() {
         lines: {
           include: {
             history: {
-              orderBy: { time: 'desc' },
+              orderBy: [
+                { time: 'desc' },
+                { speed: 'desc' }
+              ],
               take: 1,
             },
             plans: {

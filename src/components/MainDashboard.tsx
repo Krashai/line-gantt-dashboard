@@ -5,6 +5,7 @@ import { LineCard } from "./LineCard";
 import { Play, Pause, CalendarPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import { useRouter } from 'next/navigation';
 
 interface Props {
   halls: any[];
@@ -14,8 +15,19 @@ export function MainDashboard({ halls }: Props) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
   const [progress, setProgress] = useState(0);
+  const router = useRouter();
 
   const ROTATION_TIME = 10000;
+  const POLLING_INTERVAL = 1000;
+
+  // 1. Polling danych z serwera
+  useEffect(() => {
+    const interval = setInterval(() => {
+      router.refresh();
+    }, POLLING_INTERVAL);
+
+    return () => clearInterval(interval);
+  }, [router]);
 
   const nextSlide = useCallback(() => {
     setCurrentIndex((prev) => (prev + 1) % (halls?.length || 1));

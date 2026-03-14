@@ -50,28 +50,52 @@ export function LineDiagnostics({ lineId, initialPlans, initialHistory, initialC
       const pEnd = new Date(plan.endTime);
       const rangeStart = pStart < from ? from : pStart;
       const rangeEnd = pEnd > now ? now : pEnd;
+      
       if (rangeStart < rangeEnd) {
-        totalPlannedMinutes += differenceInMinutes(rangeEnd, rangeStart);
-        const historyInPlan = initialHistory.filter(h => isWithinInterval(new Date(h.time), { start: rangeStart, end: rangeEnd }));
-        historyInPlan.forEach(h => {
-          if (h.status) actualWorkMinutes += 5; // Dopasowane do interwału 5 min w workerze/seedzie
-          if (h.status && h.speed > 0) { 
+        const plannedDiff = differenceInMinutes(rangeEnd, rangeStart);
+        totalPlannedMinutes += isNaN(plannedDiff) ? 0 : plannedDiff;
+        
+        const historyInPlan = initialHistory
+          .filter(h => {
+            const hTime = new Date(h.time);
+            return hTime >= rangeStart && hTime <= rangeEnd;
+          })
+          .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+
+        for (let i = 0; i < historyInPlan.length; i++) {
+          const h = historyInPlan[i];
+          const nextH = historyInPlan[i+1];
+          const startTime = new Date(h.time);
+          const endTime = nextH ? new Date(nextH.time) : rangeEnd;
+          
+          const durationMinutes = (endTime.getTime() - startTime.getTime()) / (1000 * 60);
+          const validDuration = isNaN(durationMinutes) ? 0 : Math.max(0, durationMinutes);
+
+          if (h.status && h.speed > 0) {
+            actualWorkMinutes += validDuration;
+            
             // Wydajność to stosunek prędkości rzeczywistej do zaplanowanej
-            const ratio = h.speed / plan.plannedSpeed;
-            speedSum += Math.min(ratio, 1); // Cap ratio at 1.0 (100%) per measurement
-            speedCount++; 
+            const plannedSpeed = parseFloat(plan.plannedSpeed) || 1; // Unikaj dzielenia przez 0
+            const ratio = h.speed / plannedSpeed;
+            speedSum += Math.min(ratio, 1) * validDuration; 
+            speedCount += validDuration;
           }
-        });
+        }
       }
     });
 
     const availability = totalPlannedMinutes > 0 ? (actualWorkMinutes / totalPlannedMinutes) * 100 : 0;
     const performance = speedCount > 0 ? (speedSum / speedCount) * 100 : 0;
+    
+    const downtimeTotal = Math.max(0, totalPlannedMinutes - actualWorkMinutes);
+    const downtimeHours = Math.floor(downtimeTotal / 60);
+    const downtimeMinutes = Math.round(downtimeTotal % 60);
 
     return {
       availability: Math.min(availability, 100),
       performance: Math.min(performance, 100),
-      downtime: Math.max(0, totalPlannedMinutes - actualWorkMinutes)
+      downtimeHours,
+      downtimeMinutes
     };
   }, [initialPlans, initialHistory, from, now]);
 
@@ -277,7 +301,7 @@ export function LineDiagnostics({ lineId, initialPlans, initialHistory, initialC
         <div className="lg:w-2/3 grid grid-cols-1 md:grid-cols-3 gap-6 h-full">
           <KPICard label="Dostępność" value={kpi.availability} unit="%" icon={Timer} color="emerald" progress={kpi.availability} description="Czas pracy vs Plan" tooltip="Stosunek rzeczywistego czasu pracy maszyny do całkowitego czasu zaplanowanego w harmonogramie." className="h-full" />
           <KPICard label="Wydajność" value={kpi.performance} unit="%" icon={Gauge} color="blue" progress={kpi.performance} description="Prędkość rzeczywista" tooltip="Porównanie średniej prędkości rzeczywistej z prędkością zadaną w planie produkcji." className="h-full" />
-          <KPICard label="Przestoje" value={Math.floor(kpi.downtime / 60)} unit={kpi.downtime % 60 + "m"} icon={Ban} color="rose" description="Suma strat czasowych" tooltip="Suma wszystkich okresów, w których linia nie zgłaszała sygnału pracy w trakcie trwania aktywnego zlecenia." decimals={0} className="h-full" />
+          <KPICard label="Przestoje" value={kpi.downtimeHours} unit={`h ${kpi.downtimeMinutes}m`} icon={Ban} color="rose" description="Suma strat czasowych" tooltip="Suma wszystkich okresów, w których linia nie zgłaszała sygnału pracy w trakcie trwania aktywnego zlecenia." decimals={0} className="h-full" />
         </div>
 
         <div className="lg:w-1/3 flex flex-col h-full min-h-0">
