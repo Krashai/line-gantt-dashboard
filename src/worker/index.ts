@@ -9,19 +9,19 @@ const lineStateCache: Record<string, { status: boolean; speed: number; lineId: s
 
 client.on('connect', () => {
   console.log('✅ Worker connected to MQTT Broker');
-  client.subscribe('plc/gate/data/#', (err) => {
+  client.subscribe('lines/#', (err) => {
     if (err) console.error('❌ MQTT Subscription error:', err);
-    else console.log('📡 Subscribed to plc/gate/data/#');
+    else console.log('📡 Subscribed to lines/#');
   });
 });
 
 client.on('message', async (topic, message) => {
   const parts = topic.split('/');
-  // topic: plc/gate/data/{plc_id}/{tag_name}
-  if (parts.length < 5) return;
+  // topic: lines/{plc_id}/{tag_name}
+  if (parts.length < 3) return;
 
-  const plcId = parts[3];
-  const tagName = parts[4];
+  const plcId = parts[1];
+  const tagName = parts[2];
   const value = message.toString();
 
   try {
