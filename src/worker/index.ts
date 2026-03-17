@@ -35,32 +35,37 @@ client.on('message', async (topic, message) => {
       lineStateCache[plcId] = { status: false, speed: 0, lineId: line.id };
     }
 
-    // 2. Obsługa tagów
-    if (tagName === 'Status') {
+    const { lineId } = lineStateCache[plcId];
+    const lowerTagName = tagName.toLowerCase();
+
+    // 2. Obsługa tagów (Case-insensitive + aliasy)
+    if (lowerTagName === 'status' || lowerTagName === 'state' || lowerTagName === 'state2') {
       const status = value === '1' || value.toLowerCase() === 'true';
       lineStateCache[plcId].status = status;
 
       await prisma.machineStatusHistory.create({
         data: {
-          lineId: lineStateCache[plcId].lineId,
-          status: status,
-          speed: lineStateCache[plcId].speed, // Używamy ostatniej znanej prędkości
+          lineId,
+          status,
+          speed: lineStateCache[plcId].speed, 
         }
       });
+      console.log(`📊 Status updated for ${plcId}: ${status}`);
     } 
-    else if (tagName === 'Speed') {
+    else if (lowerTagName === 'speed') {
       const speed = parseFloat(value) || 0;
       lineStateCache[plcId].speed = speed;
 
       await prisma.machineStatusHistory.create({
         data: {
-          lineId: lineStateCache[plcId].lineId,
-          status: lineStateCache[plcId].status, // Używamy ostatniego znanego statusu
-          speed: speed
+          lineId,
+          status: lineStateCache[plcId].status,
+          speed
         }
       });
+      console.log(`🚀 Speed updated for ${plcId}: ${speed}`);
     }
-    else if (tagName === 'Scrap_Pulse') {
+    else if (lowerTagName === 'scrap_pulse' || lowerTagName === 'scrap') {
       const isPulse = value === '1' || value.toLowerCase() === 'true';
       
       // Zliczaj tylko gdy puls jest aktywny I linia pracuje (Running)
