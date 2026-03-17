@@ -9,19 +9,31 @@ const lineStateCache: Record<string, { status: boolean; speed: number; lineId: s
 
 client.on('connect', () => {
   console.log('✅ Worker connected to MQTT Broker');
-  client.subscribe('lines/#', (err) => {
+  // Subskrybujemy oba formaty, które zaobserwowaliśmy
+  client.subscribe(['lines/#', 'plc/gate/data/#'], (err) => {
     if (err) console.error('❌ MQTT Subscription error:', err);
-    else console.log('📡 Subscribed to lines/#');
+    else console.log('📡 Subscribed to lines/# and plc/gate/data/#');
   });
 });
 
 client.on('message', async (topic, message) => {
   const parts = topic.split('/');
-  // topic: lines/{plc_id}/{tag_name}
-  if (parts.length < 3) return;
+  let plcId = '';
+  let tagName = '';
 
-  const plcId = parts[1];
-  const tagName = parts[2];
+  // Rozpoznawanie formatu tematu
+  if (parts[0] === 'lines' && parts.length >= 3) {
+    // Format: lines/LP902/Speed
+    plcId = parts[1];
+    tagName = parts[2];
+  } else if (parts[0] === 'plc' && parts.length >= 5) {
+    // Format: plc/gate/data/LP202/Status
+    plcId = parts[3];
+    tagName = parts[4];
+  } else {
+    return; // Nieznany format
+  }
+
   const value = message.toString();
 
   try {
