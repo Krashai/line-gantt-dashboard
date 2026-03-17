@@ -54,16 +54,19 @@ client.on('message', async (topic, message) => {
     } 
     else if (lowerTagName === 'speed') {
       const speed = parseFloat(value) || 0;
+      const status = speed > 0.1; // Auto-detekcja: jeśli się kręci, to pracuje
+      
       lineStateCache[plcId].speed = speed;
+      lineStateCache[plcId].status = status;
 
       await prisma.machineStatusHistory.create({
         data: {
           lineId,
-          status: lineStateCache[plcId].status,
+          status,
           speed
         }
       });
-      console.log(`🚀 Speed updated for ${plcId}: ${speed}`);
+      console.log(`🚀 Speed/Status updated for ${plcId}: ${speed} (Status: ${status})`);
     }
     else if (lowerTagName === 'scrap_pulse' || lowerTagName === 'scrap') {
       const isPulse = value === '1' || value.toLowerCase() === 'true';
