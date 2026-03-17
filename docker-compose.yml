@@ -49,6 +49,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    volumes:
+      - .:/app
     environment:
       - DATABASE_URL=postgresql://user:password@db:5432/line_gantt?schema=public
       - MQTT_BROKER_URL=mqtt://10.10.0.244:1883
