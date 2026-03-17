@@ -76,75 +76,11 @@ async function main() {
         create: { ...lineData, hallId: hall.id },
       });
 
-      // Clear existing records for this line
-      await prisma.productionPlan.deleteMany({ where: { lineId: line.id } });
-      await prisma.machineStatusHistory.deleteMany({ where: { lineId: line.id } });
-      await prisma.scrapEvent.deleteMany({ where: { lineId: line.id } });
-
-      // Generate random production plans (for timeline)
-      let planStartTime = new Date();
-      planStartTime.setDate(planStartTime.getDate() - 2);
-      planStartTime.setHours(6, 0, 0, 0);
-
-      for (let i = 0; i < 8; i++) {
-        const durationHours = Math.floor(Math.random() * 12) + 6;
-        const startTime = new Date(planStartTime);
-        const endTime = new Date(planStartTime);
-        endTime.setHours(endTime.getHours() + durationHours);
-
-        await prisma.productionPlan.create({
-          data: {
-            lineId: line.id,
-            productIndex: PRODUCTS[Math.floor(Math.random() * PRODUCTS.length)],
-            startTime: startTime,
-            endTime: endTime,
-            plannedSpeed: Math.floor(Math.random() * 20) + 30,
-          }
-        });
-
-        planStartTime = new Date(endTime);
-        planStartTime.setHours(planStartTime.getHours() + Math.floor(Math.random() * 2) + 1);
-      }
-
-      // Generate machine status history (for active state)
-      const now = new Date();
-      const historyStart = new Date(now.getTime() - 24 * 60 * 60 * 1000); // 24 hours ago
-      
-      console.log(`   Generating history for ${line.name}...`);
-      
-      const historyData = [];
-      const scrapData = [];
-      
-      let currentHistoryTime = new Date(historyStart);
-      while (currentHistoryTime <= now) {
-        // 80% chance of being RUNNING
-        const isRunning = Math.random() > 0.2;
-        const speed = isRunning ? (Math.random() * 15 + 35) : 0; // 35-50 m/min if running
-        
-        historyData.push({
-          lineId: line.id,
-          time: new Date(currentHistoryTime),
-          status: isRunning,
-          speed: speed,
-        });
-
-        // Occasional scrap event if running
-        if (isRunning && Math.random() > 0.95) {
-          scrapData.push({
-            lineId: line.id,
-            time: new Date(currentHistoryTime),
-          });
-        }
-
-        currentHistoryTime.setMinutes(currentHistoryTime.getMinutes() + 5); // every 5 mins
-      }
-
-      await prisma.machineStatusHistory.createMany({ data: historyData });
-      await prisma.scrapEvent.createMany({ data: scrapData });
+      console.log(`   Registered line: ${line.name}`);
     }
   }
 
-  console.log('✅ Seed finished.');
+  console.log('✅ Seed finished. Database structure is ready for real MQTT data.');
 }
 
 main()
