@@ -14,4 +14,4 @@ COPY src/worker ./src/worker
 COPY tsconfig.json ./
 COPY src/lib ./src/lib
 
-CMD ["npx", "tsx", "src/worker/index.ts"]
+CMD ["./node_modules/.bin/tsx", "src/worker/index.ts"]

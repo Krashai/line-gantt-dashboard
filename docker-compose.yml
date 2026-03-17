@@ -51,6 +51,7 @@ services:
         condition: service_healthy
     volumes:
       - .:/app
+    command: ["./node_modules/.bin/tsx", "src/worker/index.ts"]
     environment:
       - DATABASE_URL=postgresql://user:password@db:5432/line_gantt?schema=public
       - MQTT_BROKER_URL=mqtt://10.10.0.244:1883
